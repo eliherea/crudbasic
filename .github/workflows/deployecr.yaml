@@ -1,40 +1,52 @@
-name: Deploy ecr
+name: Belajar CI/CD pipeline
 
 on:
   push:
     branches:
-      - "main"
+      - main
 
 env: 
-  AWS_REGION : "us-east-1"
-  ENV: "try"
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: ayam
+  ECS_CLUSTER: awseb-Testapp-env-umhcmzg4gi
+  WORKER_TASK_DEFINITION: worker/task-definition.json
+  WORKER_CONTAINER_NAME: nginx
 
 jobs:
-  Build:
+  build: 
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
+    - name: Checkout
+      uses: actions/checkout@v3
 
-      - name: Configure AWS Credential
-        uses: aws-actions/configure-aws-credentials@v1
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
-          aws-region: ${{ secrets.AWS_REGION }}
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
 
-      - name: login to ecr
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
+    - name: Build zip
+      run: zip -r Dockerrun.zip Dockerrun.aws.json
 
-      - name: build image and push
-        id: build-image
-        env:
-          ECR_REGISTRY: ${{steps.login-ecr.outputs.registry}}
-          ECR_REPOSITORY: ayam
-          WORKER_IMAGE_TAG: app-${{env.ENV}}-latest
-        run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$WORKER_IMAGE_TAG --build-arg aws_region=${{env.AWS_REGION}} --build-arg copy_or_mount="copy" -f worker/Dockerfile ./worker
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$WORKER_IMAGE_TAG
+    - name: verify zip contents
+      run: unzip -l Dockerrun.zip #memastikan file utama ada
+
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Dockerrun
+        path: Dockerrun.zip
+    
+    - name: Configure AWS CLI
+      run: |
+        aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws configure set aws_session_token ${{ secrets.AWS_SESSION_TOKEN }}
+        aws configure set region ${{ secrets.AWS_REGION }}
+
+    - name: Upload to S3
+      run: |
+        aws s3 cp Dockerrun.zip s3://${{ secrets.S3_BUCKET_NAME }}/Dockerrun.zip
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+        AWS_REGION: ${{ secrets.AWS_REGION }}
